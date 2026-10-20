@@ -37,6 +37,19 @@ def test_keep_shortest_path(duplicate_group: DuplicateGroup) -> None:
     )
 
 
+def test_keep_preferred_folder(duplicate_group: DuplicateGroup, tmp_path: Path) -> None:
+    preferred = tmp_path / "preferred"
+    preferred.mkdir()
+    preferred_copy = preferred / "copy"
+    preferred_copy.write_bytes(b"identical")
+    group = DuplicateGroup(
+        duplicate_group.digest,
+        (duplicate_group.files[0], preferred_copy),
+        duplicate_group.size,
+    )
+    assert choose_keep(group, KeepStrategy.PREFERRED_FOLDER, preferred) == preferred_copy
+
+
 def test_dry_run_never_deletes(duplicate_group: DuplicateGroup, tmp_path: Path) -> None:
     result = clean_duplicates([duplicate_group], manifest_path=tmp_path / "undo.json")
 

@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
-
 from .finder import DuplicateGroup
 from .hasher import full_hash
 from .rules import KeepStrategy, choose_keep
@@ -67,6 +64,17 @@ def clean_duplicates(
     except ImportError as error:
         raise RuntimeError("Recycle Bin cleanup requires the send2trash package") from error
 
+    manifest = manifest_path or Path.cwd() / "dupe-sweep-undo.json"
+    manifest_payload: dict[str, object] = {
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "permanent": permanent,
+        "removed_files": [],
+    }
+    if files:
+        if manifest.exists():
+            raise FileExistsError(f"Undo manifest already exists; choose another path: {manifest}")
+        _write_manifest(manifest, manifest_payload)
+
     entries: list[dict[str, str | int]] = []
     removed: list[Path] = []
     removed_bytes = 0
@@ -94,25 +102,14 @@ def clean_duplicates(
                 entries.append(entry)
                 removed.append(path)
                 removed_bytes += size
+                manifest_payload["removed_files"] = entries
+                _write_manifest(manifest, manifest_payload)
             except OSError as error:
                 LOGGER.warning("Could not remove %s: %s", path, error)
 
-    manifest: Path | None = None
-    if entries:
-        manifest = manifest_path or Path.cwd() / "dupe-sweep-undo.json"
-        manifest.parent.mkdir(parents=True, exist_ok=True)
-        manifest.write_text(
-            json.dumps(
-                {
-                    "created_at": datetime.now(timezone.utc).isoformat(),
-                    "permanent": permanent,
-                    "removed_files": entries,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-    return CleanupResult(len(plans), len(removed), removed_bytes, tuple(removed), manifest)
+    if not entries and files:
+        manifest.unlink(missing_ok=True)
+    return CleanupResult(len(plans), len(removed), removed_bytes, tuple(removed), manifest if entries else None)
 
 
 def restore_manifest(manifest_path: Path) -> list[Path]:
@@ -141,3 +138,11 @@ def _file_size(path: Path) -> int:
         return path.stat().st_size
     except OSError:
         return 0
+
+
+def _write_manifest(path: Path, payload: dict[str, object]) -> None:
+    """Atomically persist the undo record before and during cleanup."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temporary.replace(path)

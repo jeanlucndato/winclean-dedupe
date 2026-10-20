@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from .cleaner import clean_duplicates, restore_manifest
-from .finder import DuplicateGroup, find_duplicates
+from .finder import find_duplicates
 from .filters import CATEGORIES, FileFilters, parse_extensions
 from .folders import discover_user_folders, protected_paths
 from .logging_config import configure_logging
@@ -72,6 +72,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "clean" and args.permanent and not args.delete:
         parser.error("--permanent requires --delete")
+    if args.keep == KeepStrategy.PREFERRED_FOLDER.value and not args.preferred_folder:
+        parser.error("--keep preferred-folder requires --preferred-folder")
     if args.min_size is not None and args.max_size is not None and args.min_size > args.max_size:
         parser.error("--min-size cannot exceed --max-size")
     log_path = configure_logging()

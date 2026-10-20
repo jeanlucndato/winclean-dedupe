@@ -150,10 +150,11 @@ class DupeSweepApp:
         if not selected:
             messagebox.showinfo("Nothing selected", "Select at least one duplicate to remove.")
             return
+        affected_groups = sum(bool(selected.intersection(group.files)) for group in self.groups)
         bytes_to_free = sum(path.stat().st_size for path in selected if path.exists())
         confirmed = messagebox.askyesno(
             "Confirm cleanup",
-            f"Move {len(selected)} selected duplicate file(s) to the Recycle Bin?\n"
+            f"Move {len(selected)} selected duplicate file(s) from {affected_groups} group(s) to the Recycle Bin?\n"
             f"Approximately {bytes_to_free:,} bytes will be freed. One copy per group will be kept.",
             icon="warning",
         )
