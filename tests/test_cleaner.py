@@ -2,7 +2,9 @@
 
 import json
 import os
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -52,7 +54,10 @@ def test_confirmed_cleanup_never_removes_last_copy(
     duplicate_group: DuplicateGroup, tmp_path: Path
 ) -> None:
     removed_path = duplicate_group.files[1]
-    with patch("send2trash.send2trash", side_effect=lambda value: Path(value).unlink()):
+    def fake_trash(value: str) -> None:
+        Path(value).unlink()
+
+    with patch.dict(sys.modules, {"send2trash": SimpleNamespace(send2trash=fake_trash)}):
         result = clean_duplicates(
             [duplicate_group], delete=True, confirmed=True, manifest_path=tmp_path / "undo.json"
         )

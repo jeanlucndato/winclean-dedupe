@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 LOGGER = logging.getLogger(__name__)
 CHUNK_SIZE = 1024 * 1024

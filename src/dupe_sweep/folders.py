@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 KNOWN_FOLDER_NAMES: tuple[str, ...] = (
     "Downloads",
@@ -79,7 +79,8 @@ def protected_paths() -> list[Path]:
     """Return locations that must never be traversed on Windows."""
     if os.name != "nt":
         return []
-    system_drive = Path(os.environ.get("SystemDrive", "C:"))
+    drive = os.environ.get("SystemDrive", "C:")
+    system_drive = Path(drive + "\\" if drive.endswith(":") else drive)
     windows = Path(os.environ.get("WINDIR", str(system_drive / "Windows")))
     program_files = Path(os.environ.get("ProgramFiles", str(system_drive / "Program Files")))
     program_files_x86 = Path(

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
+from .folders import protected_paths
 from .hasher import full_hash, hash_paths, quick_hash
 from .scanner import walk_files
 
@@ -35,7 +36,8 @@ def find_duplicates(
 ) -> list[DuplicateGroup]:
     """Find duplicate files by content, skipping empty files and hardlink aliases."""
     by_size: dict[int, list[Path]] = defaultdict(list)
-    for path in walk_files(roots, exclusions=exclusions):
+    effective_exclusions = tuple(protected_paths()) + tuple(exclusions)
+    for path in walk_files(roots, exclusions=effective_exclusions):
         if on_file is not None:
             on_file(path)
         if file_filter is not None and not file_filter(path):

@@ -6,8 +6,8 @@ import argparse
 import logging
 import string
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from .cleaner import clean_duplicates, restore_manifest
 from .finder import DuplicateGroup, find_duplicates
@@ -70,7 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error(str(error))
         print(f"Restored {len(restored)} file(s).")
         return 0
-    if args.permanent and not args.delete:
+    if args.command == "clean" and args.permanent and not args.delete:
         parser.error("--permanent requires --delete")
     if args.min_size is not None and args.max_size is not None and args.min_size > args.max_size:
         parser.error("--min-size cannot exceed --max-size")
@@ -165,7 +165,7 @@ def _resolve_roots(args: argparse.Namespace, parser: argparse.ArgumentParser) ->
         if sys.platform == "win32":
             roots.extend(Path(f"{drive}:\\") for drive in string.ascii_uppercase if Path(f"{drive}:\\").exists())
         else:
-            roots.append(Path("/"))
+            parser.error("--all-drives is supported on Windows only")
     roots = list(dict.fromkeys(roots))
     roots = [path for path in roots if path.exists() and path.is_dir()]
     if not roots:

@@ -1,84 +1,109 @@
 # dupe-sweep
 
-**Find duplicate files by their contents. Keep control of every cleanup.**
+**A safety-first duplicate file finder for Windows.** Find identical content, review what would be removed, and keep control of cleanup.
 
-`dupe-sweep` is a Windows-first Python utility for locating duplicate files in common user folders. It compares file contents rather than names, so renamed copies are still found. The project is being built in safety-first phases; the current release implements folder discovery and duplicate detection. Cleanup and the graphical interface are on the roadmap.
+`dupe-sweep` scans common Windows user folders or locations you choose. It detects identical files by content rather than by filename and is designed to keep large scans resilient when files are locked, inaccessible, or changing.
 
-## Why this project
+## Highlights
 
-Duplicate files quietly consume storage and are easy to remove incorrectly. `dupe-sweep` is designed around a simple principle: make matches explainable, keep scans resilient, and require deliberate user action before cleanup is introduced.
+- **Content-based matching:** size, a 64 KiB quick hash, then full-file SHA-256.
+- **Windows-aware discovery:** resolves the six Known Folders, including OneDrive redirection.
+- **Safe by default:** scans and `clean` previews never delete files. Cleanup requires `--delete` and a confirmation.
+- **Recycle Bin cleanup:** selected copies go to the Recycle Bin; permanent deletion requires an additional typed confirmation.
+- **Undo manifest:** each removed path records its SHA-256 and retained copy; `restore` can recreate a verified copy at its original path.
+- **One copy always stays:** oldest, newest, shortest-path, or preferred-folder retention rules.
+- **Useful exports:** CSV, JSON, and self-contained HTML reports with kept/duplicate labels.
+- **Two interfaces:** a command-line tool and a Tkinter desktop app.
+- **Resilient scans:** chunked hashing, thread-pool workers, symlink/junction skipping, hard-link handling, protected system locations, and logged I/O errors.
 
-## Current capabilities
+## Install
 
-- Resolves Windows Known Folders (including redirected folders such as OneDrive) with sensible home-directory fallbacks.
-- Scans the standard user folders: Downloads, Pictures, Documents, Desktop, Music, and Videos.
-- Skips symbolic links, excluded paths, and hard-link aliases.
-- Finds matches through three stages: file size, a 64 KiB quick hash, then a full SHA-256 digest.
-- Hashes files in bounded chunks using a thread pool; inaccessible files are logged and skipped.
-- Skips empty files by default, with an option in the core API to include them.
-- Includes pytest coverage for renamed copies, same-size non-matches, nested files, empty files, exclusions, mocked permission errors, and hard links.
-
-> **Project status:** Phase 1 (discovery and duplicate-finding foundation) is implemented. There is not yet a CLI, deletion workflow, report exporter, or GUI. Those are planned phases, not current features.
-
-## Quick start
-
-Requires Python 3.10 or newer. Phase 1 exposes a Python API; the command-line entry point will arrive in a later phase.
+Requires Python 3.10 or newer. Windows 10/11 is the primary target; the scanning and reporting core is cross-platform-friendly.
 
 ```powershell
 git clone <repository-url>
-cd dupe-sweep
+cd winclean-dedupe
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install pytest
-$env:PYTHONPATH = "src"
-pytest
+python -m pip install -e ".[dev]"
 ```
 
-Example from Python:
+The editable install provides `dupe-sweep` and `dupe-sweep-gui` commands. The GUI requires a Python distribution that includes Tkinter.
 
-```python
-from pathlib import Path
+## Use the CLI
 
-from dupe_sweep.finder import find_duplicates
-from dupe_sweep.folders import discover_user_folders, protected_paths
+```powershell
+# Scan the six standard user folders (the default when no scope is specified)
+dupe-sweep scan --default-folders
 
-groups = find_duplicates(
-    discover_user_folders(),
-    exclusions=tuple(protected_paths()),
-)
+# Scan a chosen folder and export an HTML report
+dupe-sweep scan --path "D:\Photos" --report html --output photos-report.html
 
-for group in groups:
-    print(f"{len(group.files)} copies · {group.size:,} bytes · SHA-256 {group.digest}")
-    for path in group.files:
-        print(f"  {path}")
+# Include only large images, excluding thumbnails
+dupe-sweep scan --path "D:\Photos" --images --min-size 1MB --exclude-ext .thumb
+
+# Dry-run cleanup preview; this does not delete anything
+dupe-sweep clean --default-folders --keep oldest
+
+# Review a summary, then move duplicates to the Recycle Bin after confirmation
+dupe-sweep clean --path "D:\Archive" --keep preferred-folder `
+  --preferred-folder "D:\Archive\Master" --delete --report csv
+
+# Scan mounted drives (system locations remain excluded)
+dupe-sweep scan --all-drives --exclude "D:\Backups"
+
+# Restore a removed copy from its verified kept copy using the manifest
+dupe-sweep restore .\dupe-sweep-undo.json
 ```
 
-## How matching works
+`--path`, `--exclude`, `--ext`, and `--exclude-ext` can be repeated. Size suffixes include `KB`, `MB`, `GB`, and `TB`. `--include-empty` opts into matching zero-byte files. Keep rules are `oldest` (default), `newest`, `shortest-path`, and `preferred-folder`.
 
-1. **Size:** files are grouped by byte length. Unique sizes need no hashing.
-2. **Quick comparison:** candidates are compared using a hash of their first 64 KiB.
-3. **Confirmation:** remaining candidates are read in chunks and compared by full SHA-256.
+## Use the desktop app
 
-Every reported group therefore contains files with identical full-file content. File names do not affect matching. The scanner does not follow symbolic links, and files sharing the same device and inode are treated as hard-link aliases rather than separate copies.
+Run `dupe-sweep-gui` or `python -m dupe_sweep.gui`. Add folders, scan, then use the checkboxes to select duplicate copies. The app marks the retained copy in each group and asks for confirmation before moving selected files to the Recycle Bin.
 
-## Safety design
+## How duplicate detection works
 
-The current phase only reads and hashes files; it does not delete or modify them. Later cleanup work is planned to default to dry-run, move selected files to the Recycle Bin, require confirmation, preserve at least one copy per group, and write a JSON undo manifest. Those protections will be implemented and tested before cleanup is exposed.
+1. **Group by size.** Files with unique sizes cannot be duplicates and are skipped.
+2. **Compare a quick hash.** Candidates are grouped by a hash of their first 64 KiB.
+3. **Confirm the full contents.** Remaining candidates are read in bounded chunks and checked with SHA-256.
 
-System locations are excluded through the `protected_paths()` helper. The scanner also accepts explicit exclusions, enabling callers to avoid additional directories.
+Names and extensions do not determine a match. Empty files are skipped by default. Symbolic links and junctions are not followed, and multiple paths to the same hard-linked file are collapsed to one filesystem identity.
+
+## Safety and recovery
+
+- Scanning only reads files. `clean` without `--delete` is a dry run.
+- Before cleanup, the CLI prints groups, files to remove, and estimated recoverable bytes, then asks for confirmation.
+- The cleaner verifies that both the retained copy and each candidate still match the duplicate digest immediately before removal.
+- System locations (Windows, Program Files, ProgramData, AppData, Recycle Bin, and System Volume Information) are excluded, along with paths supplied through `--exclude`.
+- Normal cleanup uses `send2trash`; permanent removal is an explicit opt-in requiring `--permanent` and typing `PERMANENT`.
+- The JSON manifest records each removed file's original path, SHA-256, size, and kept copy. `dupe-sweep restore <manifest>` restores bytes from that verified kept copy and refuses to overwrite an existing path.
+- Rotating logs are written to `logs/dupe-sweep.log`.
+
+## Project structure
+
+| Module | Responsibility |
+| --- | --- |
+| `folders.py`, `scanner.py` | Known Folders, protected paths, resilient traversal |
+| `hasher.py`, `finder.py` | Staged hashing and duplicate groups |
+| `rules.py`, `cleaner.py` | Retention choices, guarded removal, restore manifests |
+| `filters.py`, `reports.py` | Scan filters and CSV/JSON/HTML output |
+| `cli.py`, `gui.py` | Command-line and Tkinter interfaces |
 
 ## Screenshots
 
-_GUI screenshots will be added after the Tkinter interface is implemented._
+_Add a screenshot of the Tkinter results view here after a release build._
 
-## Roadmap
+## Development and tests
 
-- [x] Phase 1 — known-folder discovery, resilient scanner, staged hashing, duplicate groups, tests
-- [ ] Phase 2 — keep rules, safe cleanup, undo manifest, and CLI
-- [ ] Phase 3 — CSV, JSON, and HTML reports; rotating logs; size and type filters
-- [ ] Phase 4 — Tkinter interface with grouped results and cleanup controls
-- [ ] Phase 5 — packaging, Windows CI, final documentation and release polish
+```powershell
+python -m pip install -e ".[dev]"
+ruff check .
+pytest -q
+```
+
+The test suite uses temporary directories and covers duplicate matching, non-matches, empty files, nesting, exclusions, mocked I/O errors, hard links, keep rules, dry-run safety, the one-copy guarantee, manifest restoration, filters, and report exports. GitHub Actions runs Ruff and pytest on Windows with Python 3.10, 3.11, and 3.12.
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
