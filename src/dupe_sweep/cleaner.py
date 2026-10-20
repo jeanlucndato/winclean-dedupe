@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import stat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+
 from .finder import DuplicateGroup
 from .hasher import full_hash
 from .rules import KeepStrategy, choose_keep
@@ -79,12 +81,12 @@ def clean_duplicates(
     removed: list[Path] = []
     removed_bytes = 0
     for group, keep, candidates in plans:
-        if not keep.exists() or full_hash(keep) != group.digest:
+        if _stable_file_hash(keep) != group.digest:
             LOGGER.warning("Skipping group because retained copy changed: %s", keep)
             continue
         for path in candidates:
             try:
-                if not path.is_file() or full_hash(path) != group.digest:
+                if _stable_file_hash(path) != group.digest:
                     LOGGER.warning("Skipping changed or missing duplicate: %s", path)
                     continue
                 size = path.stat().st_size
@@ -146,3 +148,18 @@ def _write_manifest(path: Path, payload: dict[str, object]) -> None:
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     temporary.replace(path)
+
+
+def _stable_file_hash(path: Path) -> str | None:
+    """Hash a regular file only if its identity and metadata stay stable."""
+    try:
+        before = path.stat(follow_symlinks=False)
+        if not stat.S_ISREG(before.st_mode):
+            return None
+        digest = full_hash(path)
+        after = path.stat(follow_symlinks=False)
+    except OSError:
+        return None
+    identity_before = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+    identity_after = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+    return digest if identity_before == identity_after else None
