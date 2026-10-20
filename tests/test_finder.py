@@ -1,5 +1,7 @@
 """Tests for file discovery and staged duplicate detection."""
 
+import os
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -66,9 +68,9 @@ def test_permission_errors_are_reported_and_scan_continues(tmp_path: Path) -> No
     def fail_on_walk(error: OSError) -> None:
         errors.append(error)
 
-    real_walk = __import__("os").walk
+    real_walk = os.walk
 
-    def mocked_walk(*args: object, **kwargs: object):
+    def mocked_walk(*args: object, **kwargs: object) -> Iterator[tuple[str, list[str], list[str]]]:
         onerror = kwargs["onerror"]
         onerror(PermissionError("mocked access denied"))
         yield from real_walk(*args, **kwargs)
