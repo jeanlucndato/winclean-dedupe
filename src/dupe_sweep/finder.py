@@ -30,10 +30,16 @@ def find_duplicates(
     include_empty: bool = False,
     workers: int | None = None,
     on_error: Callable[[Path, OSError], None] | None = None,
+    file_filter: Callable[[Path], bool] | None = None,
+    on_file: Callable[[Path], None] | None = None,
 ) -> list[DuplicateGroup]:
     """Find duplicate files by content, skipping empty files and hardlink aliases."""
     by_size: dict[int, list[Path]] = defaultdict(list)
     for path in walk_files(roots, exclusions=exclusions):
+        if on_file is not None:
+            on_file(path)
+        if file_filter is not None and not file_filter(path):
+            continue
         try:
             stat = path.stat(follow_symlinks=False)
         except OSError as error:

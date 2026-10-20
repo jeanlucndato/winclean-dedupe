@@ -1,0 +1,3 @@
+send2trash>=1.8
+
+# Development and tests: pip install -e ".[dev]"
